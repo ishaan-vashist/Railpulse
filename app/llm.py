@@ -3,15 +3,34 @@ import json
 import logging
 from datetime import date
 from typing import Dict, Any, Optional
-from openai import OpenAI
+import importlib.util
 from .config import settings
 from .db import upsert_daily_recommendations
 from .etl import get_portfolio_summary
 
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client
-client = OpenAI(api_key=settings.openai_api_key)
+# Initialize OpenAI client with version compatibility
+try:
+    import openai
+    # Check if we're using the newer OpenAI package (v1.0.0+)
+    if hasattr(openai, '__version__') and openai.__version__.startswith(('1.', '2.')):
+        # Modern OpenAI package
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.openai_api_key)
+        is_legacy_openai = False
+    else:
+        # Legacy OpenAI package
+        openai.api_key = settings.openai_api_key
+        client = openai
+        is_legacy_openai = True
+except (ImportError, AttributeError) as e:
+    logger.error(f"Error initializing OpenAI client: {e}")
+    # Fallback to a basic client
+    import openai
+    openai.api_key = settings.openai_api_key
+    client = openai
+    is_legacy_openai = True
 
 
 def create_market_prompt(portfolio_data: Dict[str, Any]) -> str:
@@ -81,25 +100,50 @@ def call_llm_analysis(portfolio_data: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info("Calling OpenAI API for market analysis...")
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional market analyst. Provide concise, data-driven insights and actionable recommendations. Always respond in valid JSON format."
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ],
-            max_tokens=500,
-            temperature=0.3,
-            top_p=1.0
-        )
+        # Prepare common parameters
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a professional market analyst. Provide concise, data-driven insights and actionable recommendations. Always respond in valid JSON format."
+            },
+            {
+                "role": "user", 
+                "content": prompt
+            }
+        ]
         
-        # Extract and parse the response
-        content = response.choices[0].message.content.strip()
+        try:
+            if not is_legacy_openai:
+                # Modern OpenAI API (v1.0.0+)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    max_tokens=500,
+                    temperature=0.3,
+                    top_p=1.0
+                )
+                content = response.choices[0].message.content.strip()
+            else:
+                # Legacy OpenAI API (v0.x)
+                response = client.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    max_tokens=500,
+                    temperature=0.3,
+                    top_p=1.0
+                )
+                content = response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API: {e}")
+            # Return a fallback response
+            return {
+                "summary": f"Failed to generate market analysis due to API error: {str(e)[:100]}...",
+                "recommendations": [
+                    "Check API connectivity and credentials",
+                    "Verify OpenAI service status",
+                    "Try again later when service is available"
+                ]
+            }
         
         try:
             # Try to parse as JSON
