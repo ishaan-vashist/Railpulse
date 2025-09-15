@@ -29,6 +29,7 @@ app.add_middleware(
         "http://localhost:3001", 
         "https://*.vercel.app",   # Vercel deployments
         "https://*.netlify.app",  # Netlify deployments
+        "https://*.railway.app",  # Railway deployments
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
