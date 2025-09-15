@@ -108,6 +108,13 @@ async def root():
     }
 
 
+# Health check endpoint
+@app.get("/healthz")
+async def health_check():
+    """Health check endpoint for monitoring and deployment checks."""
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
