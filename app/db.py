@@ -32,8 +32,17 @@ def execute_query(query: str, params: Optional[Dict[str, Any]] = None) -> Any:
     """Execute a SQL query and return results."""
     with engine.connect() as conn:
         try:
+            # Log the query for debugging
+            param_str = str(params) if params else "None"
+            logger.debug(f"Executing query: {query}\nParams: {param_str}")
+            
+            # Execute the query
             result = conn.execute(text(query), params or {})
+            
+            # Explicitly commit the transaction
             conn.commit()
+            
+            logger.debug(f"Query executed successfully")
             return result
         except SQLAlchemyError as e:
             logger.error(f"Database query failed: {e}")
@@ -43,13 +52,22 @@ def execute_query(query: str, params: Optional[Dict[str, Any]] = None) -> Any:
 
 def upsert_daily_prices(row: Dict[str, Any]) -> None:
     """Upsert a row into daily_prices table."""
+    # Ensure created_at is included in the row
+    if 'created_at' not in row:
+        from datetime import datetime
+        row['created_at'] = datetime.utcnow()
+    
+    # Log the data being inserted for debugging
+    logger.info(f"Upserting daily_prices for {row['symbol']} on {row['trade_date']}: "
+               f"open={row['open']}, close={row['close']}, volume={row['volume']}")
+    
     query = """
     INSERT INTO daily_prices (
         trade_date, symbol, open, high, low, close, adj_close, 
         volume, source, raw_json, created_at
     ) VALUES (
         :trade_date, :symbol, :open, :high, :low, :close, :adj_close,
-        :volume, :source, :raw_json, NOW()
+        :volume, :source, :raw_json, :created_at
     )
     ON CONFLICT (trade_date, symbol) 
     DO UPDATE SET
@@ -61,12 +79,24 @@ def upsert_daily_prices(row: Dict[str, Any]) -> None:
         volume = EXCLUDED.volume,
         source = EXCLUDED.source,
         raw_json = EXCLUDED.raw_json,
-        created_at = NOW()
+        created_at = EXCLUDED.created_at
     """
     
     try:
         execute_query(query, row)
-        logger.info(f"Upserted daily_prices for {row['symbol']} on {row['trade_date']}")
+        logger.info(f"Successfully upserted daily_prices for {row['symbol']} on {row['trade_date']}")
+        
+        # Verify the data was inserted
+        verify_query = """
+        SELECT * FROM daily_prices 
+        WHERE symbol = :symbol AND trade_date = :trade_date
+        """
+        result = execute_query(verify_query, {"symbol": row["symbol"], "trade_date": row["trade_date"]})
+        if result.rowcount > 0:
+            logger.info(f"Verified data insertion for {row['symbol']} on {row['trade_date']}")
+        else:
+            logger.warning(f"Data verification failed for {row['symbol']} on {row['trade_date']}")
+            
     except Exception as e:
         logger.error(f"Failed to upsert daily_prices for {row['symbol']}: {e}")
         raise
@@ -74,13 +104,22 @@ def upsert_daily_prices(row: Dict[str, Any]) -> None:
 
 def upsert_daily_metrics(row: Dict[str, Any]) -> None:
     """Upsert a row into daily_metrics table."""
+    # Ensure created_at is included in the row
+    if 'created_at' not in row:
+        from datetime import datetime
+        row['created_at'] = datetime.utcnow()
+    
+    # Log the data being inserted for debugging
+    logger.info(f"Upserting daily_metrics for {row['symbol']} on {row['trade_date']}: "
+               f"return_pct={row['return_pct']}")
+    
     query = """
     INSERT INTO daily_metrics (
         trade_date, symbol, return_pct, ma7, ma30, rsi14, 
         vol7, high20, low20, created_at
     ) VALUES (
         :trade_date, :symbol, :return_pct, :ma7, :ma30, :rsi14,
-        :vol7, :high20, :low20, NOW()
+        :vol7, :high20, :low20, :created_at
     )
     ON CONFLICT (trade_date, symbol)
     DO UPDATE SET
@@ -91,12 +130,24 @@ def upsert_daily_metrics(row: Dict[str, Any]) -> None:
         vol7 = EXCLUDED.vol7,
         high20 = EXCLUDED.high20,
         low20 = EXCLUDED.low20,
-        created_at = NOW()
+        created_at = EXCLUDED.created_at
     """
     
     try:
         execute_query(query, row)
-        logger.info(f"Upserted daily_metrics for {row['symbol']} on {row['trade_date']}")
+        logger.info(f"Successfully upserted daily_metrics for {row['symbol']} on {row['trade_date']}")
+        
+        # Verify the data was inserted
+        verify_query = """
+        SELECT * FROM daily_metrics 
+        WHERE symbol = :symbol AND trade_date = :trade_date
+        """
+        result = execute_query(verify_query, {"symbol": row["symbol"], "trade_date": row["trade_date"]})
+        if result.rowcount > 0:
+            logger.info(f"Verified metrics insertion for {row['symbol']} on {row['trade_date']}")
+        else:
+            logger.warning(f"Metrics verification failed for {row['symbol']} on {row['trade_date']}")
+            
     except Exception as e:
         logger.error(f"Failed to upsert daily_metrics for {row['symbol']}: {e}")
         raise
@@ -104,11 +155,19 @@ def upsert_daily_metrics(row: Dict[str, Any]) -> None:
 
 def upsert_daily_recommendations(row: Dict[str, Any]) -> None:
     """Upsert a row into daily_recommendations table."""
+    # Ensure created_at is included in the row
+    if 'created_at' not in row:
+        from datetime import datetime
+        row['created_at'] = datetime.utcnow()
+    
+    # Log the data being inserted for debugging
+    logger.info(f"Upserting daily_recommendations for {row['for_date']} scope {row['scope']}")
+    
     query = """
     INSERT INTO daily_recommendations (
         for_date, scope, summary, recommendations, model, raw_prompt, created_at
     ) VALUES (
-        :for_date, :scope, :summary, :recommendations, :model, :raw_prompt, NOW()
+        :for_date, :scope, :summary, :recommendations, :model, :raw_prompt, :created_at
     )
     ON CONFLICT (for_date, scope)
     DO UPDATE SET
@@ -116,12 +175,24 @@ def upsert_daily_recommendations(row: Dict[str, Any]) -> None:
         recommendations = EXCLUDED.recommendations,
         model = EXCLUDED.model,
         raw_prompt = EXCLUDED.raw_prompt,
-        created_at = NOW()
+        created_at = EXCLUDED.created_at
     """
     
     try:
         execute_query(query, row)
-        logger.info(f"Upserted daily_recommendations for {row['for_date']} scope {row['scope']}")
+        logger.info(f"Successfully upserted daily_recommendations for {row['for_date']} scope {row['scope']}")
+        
+        # Verify the data was inserted
+        verify_query = """
+        SELECT * FROM daily_recommendations 
+        WHERE for_date = :for_date AND scope = :scope
+        """
+        result = execute_query(verify_query, {"for_date": row["for_date"], "scope": row["scope"]})
+        if result.rowcount > 0:
+            logger.info(f"Verified recommendations insertion for {row['for_date']} scope {row['scope']}")
+        else:
+            logger.warning(f"Recommendations verification failed for {row['for_date']} scope {row['scope']}")
+            
     except Exception as e:
         logger.error(f"Failed to upsert daily_recommendations: {e}")
         raise
@@ -190,3 +261,22 @@ def get_daily_recommendations(for_date: str, scope: str = "portfolio") -> Option
     except Exception as e:
         logger.error(f"Failed to get daily_recommendations: {e}")
         raise
+
+
+def get_latest_daily_price(symbol: str) -> Optional[Dict[str, Any]]:
+    """Get the latest daily price for a symbol."""
+    query = """
+    SELECT trade_date, symbol, open, high, low, close, adj_close, volume, source
+    FROM daily_prices 
+    WHERE symbol = :symbol
+    ORDER BY trade_date DESC
+    LIMIT 1
+    """
+    
+    try:
+        result = execute_query(query, {"symbol": symbol})
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Failed to get latest daily price for {symbol}: {e}")
+        return None

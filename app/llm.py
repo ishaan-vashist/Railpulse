@@ -157,14 +157,46 @@ def generate_and_store_recommendations(trade_date: date) -> Dict[str, Any]:
         
         if portfolio_data['symbols_count'] == 0:
             logger.warning(f"No portfolio data available for {trade_date}")
-            return {
-                "summary": f"No market data available for analysis on {trade_date}.",
-                "recommendations": [
-                    "Check data sources for availability",
-                    "Verify market trading hours",
-                    "Review system configuration"
-                ]
-            }
+            
+            # Try to fetch some sample data for demonstration purposes
+            from .db import get_latest_daily_price, execute_query
+            from .config import settings
+            
+            # Get available symbols
+            symbols = settings.get_tickers_list()
+            sample_data = []
+            
+            for symbol in symbols[:3]:  # Limit to 3 symbols to avoid overloading
+                try:
+                    latest = get_latest_daily_price(symbol)
+                    if latest:
+                        sample_data.append({
+                            "symbol": symbol,
+                            "latest_date": str(latest["trade_date"]),
+                            "latest_price": latest["close"]
+                        })
+                except Exception as e:
+                    logger.error(f"Error fetching sample data for {symbol}: {e}")
+            
+            if sample_data:
+                return {
+                    "summary": f"No market data available for {trade_date}, but showing sample data from most recent available dates.",
+                    "recommendations": [
+                        f"Consider fetching data for {trade_date} using the ETL pipeline",
+                        f"Latest data available for {', '.join([d['symbol'] for d in sample_data])}",
+                        f"Check API rate limits and data availability for the requested date"
+                    ]
+                }
+            else:
+                return {
+                    "summary": f"No market data available for analysis on {trade_date}.",
+                    "recommendations": [
+                        "Check data sources for availability",
+                        "Verify market trading hours",
+                        "Review system configuration"
+                    ]
+                }
+            
         
         # Generate LLM analysis
         analysis = call_llm_analysis(portfolio_data)

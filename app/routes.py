@@ -175,18 +175,60 @@ async def get_recommendations(
         # Get recommendations from database
         recommendations = get_daily_recommendations(query_date, "portfolio")
         
+        # If no recommendations exist, try to generate them on-demand
         if not recommendations:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No recommendations found for {query_date}"
-            )
+            logger.info(f"No recommendations found for {query_date}, generating on-demand")
+            try:
+                from datetime import datetime
+                from .llm import generate_and_store_recommendations
+                
+                # Convert string date to date object
+                date_obj = datetime.strptime(query_date, "%Y-%m-%d").date()
+                
+                # Generate and store recommendations
+                generated = generate_and_store_recommendations(date_obj)
+                
+                # Try to fetch the newly generated recommendations
+                recommendations = get_daily_recommendations(query_date, "portfolio")
+                
+                if not recommendations:
+                    # If still no recommendations, use the generated data directly
+                    return RecommendationsResponse(
+                        date=query_date,
+                        scope="portfolio",
+                        summary=generated["summary"],
+                        recommendations=generated["recommendations"],
+                        created_at=datetime.now().isoformat()
+                    )
+            except Exception as e:
+                logger.error(f"Failed to generate recommendations on-demand: {e}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No recommendations found for {query_date} and generation failed"
+                )
         
         import json
+        
+        # Handle both JSON string and already parsed recommendations
+        recommendations_data = recommendations["recommendations"]
+        if isinstance(recommendations_data, str):
+            # Parse JSON string
+            parsed_recommendations = json.loads(recommendations_data)
+        elif isinstance(recommendations_data, list):
+            # Already parsed
+            parsed_recommendations = recommendations_data
+        else:
+            # Fallback - try to parse as JSON or use as-is
+            try:
+                parsed_recommendations = json.loads(str(recommendations_data))
+            except:
+                parsed_recommendations = []
+        
         return RecommendationsResponse(
             date=query_date,
             scope=recommendations["scope"],
             summary=recommendations["summary"],
-            recommendations=json.loads(recommendations["recommendations"]),
+            recommendations=parsed_recommendations,
             created_at=recommendations["created_at"].isoformat() if recommendations["created_at"] else ""
         )
         
@@ -203,6 +245,7 @@ async def get_recommendations(
 # Admin endpoint to run today's ETL
 @admin_router.post("/run-today", response_model=ETLResponse)
 async def run_today_etl(
+    force_refresh: bool = Query(False, description="Force refresh data from API instead of using cache"),
     _: bool = Depends(verify_app_secret)
 ):
     """
@@ -225,7 +268,7 @@ async def run_today_etl(
             )
         
         # Run ETL pipeline
-        etl_results = run_today(symbols)
+        etl_results = await run_today(symbols, force_refresh=force_refresh)
         
         # Generate LLM recommendations
         trade_date = today_ist_date()
@@ -266,6 +309,65 @@ async def run_today_etl(
         raise HTTPException(
             status_code=500,
             detail=f"ETL pipeline failed: {str(e)}"
+        )
+
+
+# Admin endpoint to generate recommendations for a specific date
+@admin_router.post("/generate-recommendations", response_model=dict)
+async def generate_recommendations_admin(
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    force: bool = Query(False, description="Force regeneration even if recommendations already exist"),
+    _: bool = Depends(verify_app_secret)
+):
+    """
+    Generate recommendations for a specific date.
+    Requires APP_SECRET authentication.
+    
+    Args:
+        date: Date in YYYY-MM-DD format
+        force: Force regeneration even if recommendations already exist
+    
+    Returns:
+        Generated recommendations
+    """
+    try:
+        # Validate date format
+        from datetime import datetime
+        try:
+            date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+        
+        # Check if recommendations already exist
+        if not force:
+            recommendations = get_daily_recommendations(date, "portfolio")
+            if recommendations:
+                return {
+                    "status": "exists",
+                    "message": f"Recommendations already exist for {date}",
+                    "recommendations": recommendations
+                }
+        
+        # Generate recommendations
+        from .llm import generate_and_store_recommendations
+        result = generate_and_store_recommendations(date_obj)
+        
+        return {
+            "status": "success",
+            "message": f"Successfully generated recommendations for {date}",
+            "recommendations": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate recommendations: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate recommendations: {str(e)}"
         )
 
 

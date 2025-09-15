@@ -3,7 +3,7 @@ import os
 from datetime import date
 from typing import List
 import pytz
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # Alpha Vantage
     alphavantage_api_key: str
     alphavantage_interval: str = "5min"
+    alphavantage_max_daily_calls: int = 20
+    alphavantage_calls_per_minute: int = 5
     
     # OpenAI
     openai_api_key: str
@@ -27,6 +29,13 @@ class Settings(BaseSettings):
     
     # Security
     app_secret: str
+    
+    # Logging
+    log_level: str = "INFO"
+    
+    # Development
+    use_mock_data: bool = False
+    use_mock_data_on_error: bool = True
     
     class Config:
         env_file = ".env"

@@ -45,7 +45,8 @@ def main():
         logger.info("STEP 1: Running ETL Pipeline")
         logger.info("=" * 40)
         
-        etl_results = run_today(symbols)
+        import asyncio
+        etl_results = asyncio.run(run_today(symbols))
         
         # Print ETL results
         logger.info(f"ETL Results for {etl_results['trade_date']}:")
