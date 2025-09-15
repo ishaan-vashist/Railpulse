@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy the rest of the application
 COPY . .
 
-# Set environment variables
-ENV PORT=8000
+# Hardcode port to avoid environment variable issues
+EXPOSE 8000
 
-# Command to run the application
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# Command to run the application with hardcoded port
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
