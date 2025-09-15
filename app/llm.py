@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import date
 from typing import Dict, Any, Optional
-import openai
+from openai import OpenAI
 from .config import settings
 from .db import upsert_daily_recommendations
 from .etl import get_portfolio_summary
@@ -11,7 +11,7 @@ from .etl import get_portfolio_summary
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
-openai.api_key = settings.openai_api_key
+client = OpenAI(api_key=settings.openai_api_key)
 
 
 def create_market_prompt(portfolio_data: Dict[str, Any]) -> str:
@@ -81,7 +81,7 @@ def call_llm_analysis(portfolio_data: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info("Calling OpenAI API for market analysis...")
         
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
