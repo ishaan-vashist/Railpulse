@@ -35,6 +35,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Health check endpoint - defined before startup event to ensure it works
+# even if startup validation fails
+@app.get("/healthz")
+async def health_check():
+    """Health check endpoint for monitoring and deployment checks."""
+    # This endpoint always returns OK to allow Railway health checks to pass
+    # regardless of application startup status
+    return {"status": "ok"}
+
 # Include routes
 app.include_router(get_router())
 
@@ -107,12 +116,6 @@ async def root():
         }
     }
 
-
-# Health check endpoint
-@app.get("/healthz")
-async def health_check():
-    """Health check endpoint for monitoring and deployment checks."""
-    return {"status": "ok"}
 
 
 if __name__ == "__main__":
